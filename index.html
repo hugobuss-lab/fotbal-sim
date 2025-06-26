@@ -8,9 +8,8 @@
   body {
     font-family: Arial, sans-serif;
     text-align: center;
-    background: #3a7a2a; /* zelené hřiště */
-    margin: 0;
-    padding: 0;
+    background: #3a7a2a;
+    margin: 0; padding: 0;
   }
   #pitch {
     position: relative;
@@ -20,18 +19,23 @@
     height: 500px;
     border: 3px solid white;
     border-radius: 15px;
+    overflow: hidden;
   }
   .player {
     position: absolute;
     width: 30px;
     height: 30px;
-    background: yellow;
     border-radius: 50%;
     line-height: 30px;
     font-weight: bold;
     color: black;
     cursor: default;
     user-select: none;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 14px;
+    text-align: center;
   }
   .team1 {
     background: #ffd700;
@@ -61,7 +65,7 @@
   #log {
     margin-top: 20px;
     width: 800px;
-    height: 100px;
+    height: 120px;
     background: #222;
     color: #0f0;
     font-family: monospace;
@@ -70,6 +74,7 @@
     border-radius: 8px;
     margin-left: auto;
     margin-right: auto;
+    text-align: left;
   }
 </style>
 </head>
@@ -105,7 +110,7 @@
 
 <div id="controls">
   <button id="startBtn">Start simulace</button>
-  <button id="resetBtn">Reset</button>
+  <button id="resetBtn" disabled>Reset</button>
 </div>
 
 <div id="log"></div>
@@ -121,132 +126,181 @@
   let score1 = 0;
   let score2 = 0;
   let intervalId = null;
-
-  // Rozdělení pozic podle formace (zjednodušené)
-  const positionsMap = {
-    "4-4-2": ["GK","LB","CB","CB","RB","LM","CM","CM","RM","ST","ST"],
-    "4-3-3": ["GK","LB","CB","CB","RB","CM","CM","CM","LW","ST","RW"],
-    "3-5-2": ["GK","CB","CB","CB","LM","CM","CM","CM","RM","ST","ST"]
+  let playersTeam1 = [];
+  let playersTeam2 = [];
+  let playerElements = [];
+  let pitchWidth = pitch.clientWidth;
+  let pitchHeight = pitch.clientHeight;
+  let simulationSpeed = 200; // ms mezi "tahy"
+  
+  // Pozice na hřišti pro různé formace (x, y v % pozicích hřiště)
+  // Přibližné rozmístění, přizpůsobené na šířku a výšku hřiště
+  const formations = {
+    "4-4-2": [
+      {pos:"GK", x:5, y:50},
+      {pos:"LB", x:20, y:20},
+      {pos:"CB", x:20, y:40},
+      {pos:"CB", x:20, y:60},
+      {pos:"RB", x:20, y:80},
+      {pos:"LM", x:50, y:20},
+      {pos:"CM", x:45, y:40},
+      {pos:"CM", x:45, y:60},
+      {pos:"RM", x:50, y:80},
+      {pos:"ST", x:70, y:35},
+      {pos:"ST", x:70, y:65}
+    ],
+    "4-3-3": [
+      {pos:"GK", x:5, y:50},
+      {pos:"LB", x:20, y:20},
+      {pos:"CB", x:20, y:40},
+      {pos:"CB", x:20, y:60},
+      {pos:"RB", x:20, y:80},
+      {pos:"CM", x:45, y:25},
+      {pos:"CM", x:45, y:50},
+      {pos:"CM", x:45, y:75},
+      {pos:"LW", x:70, y:20},
+      {pos:"ST", x:75, y:50},
+      {pos:"RW", x:70, y:80}
+    ],
+    "3-5-2": [
+      {pos:"GK", x:5, y:50},
+      {pos:"CB", x:20, y:25},
+      {pos:"CB", x:20, y:50},
+      {pos:"CB", x:20, y:75},
+      {pos:"LM", x:45, y:15},
+      {pos:"CM", x:45, y:35},
+      {pos:"CDM", x:40, y:50},
+      {pos:"CM", x:45, y:65},
+      {pos:"RM", x:45, y:85},
+      {pos:"ST", x:70, y:35},
+      {pos:"ST", x:70, y:65}
+    ]
   };
+
+  function createPlayerElement(name, teamClass, x, y) {
+    const div = document.createElement('div');
+    div.classList.add('player', teamClass);
+    div.style.left = (x / 100 * pitchWidth - 15) + 'px'; // střed hrace
+    div.style.top = (y / 100 * pitchHeight - 15) + 'px';
+    div.title = name;
+    div.textContent = name.length > 3 ? name.substr(0,3) : name; // zkratka jména
+    pitch.appendChild(div);
+    return {el: div, x: x / 100 * pitchWidth, y: y / 100 * pitchHeight};
+  }
 
   function clearPitch() {
-    pitch.innerHTML = "";
+    pitch.innerHTML = '';
+    playerElements = [];
   }
 
-  // Nakreslí hráče na hřiště podle formace a jmen
-  function drawPlayers(team, formation, names, teamClass, leftSide) {
-    const positions = positionsMap[formation];
-    if(names.length < positions.length) {
-      alert(`Tým ${team} má málo hráčů pro zvolenou formaci (${positions.length} hráčů potřebuje).`);
-      return false;
+  function setupPlayers() {
+    clearPitch();
+
+    // Tým 1
+    let formation1 = document.getElementById('formation1').value;
+    let names1 = document.getElementById('players1').value.split(',').map(s => s.trim()).filter(s => s);
+    let pos1 = formations[formation1];
+    playersTeam1 = [];
+    for (let i=0; i<pos1.length; i++) {
+      let name = names1[i] || pos1[i].pos;
+      playersTeam1.push({name: name, pos: pos1[i].pos, x: pos1[i].x, y: pos1[i].y});
+      playerElements.push(createPlayerElement(name, 'team1', pos1[i].x, pos1[i].y));
     }
 
-    // Souřadnice hráčů na hřišti - jednodušší rozložení (v %)
-    const posCoords = {
-      "GK": {x: 5, y: 50},
-      "LB": {x: 20, y: 20},
-      "CB": {x: 20, y: 40},
-      "RB": {x: 20, y: 60},
-      "LM": {x: 40, y: 20},
-      "CM": {x: 40, y: 40},
-      "RM": {x: 40, y: 60},
-      "LW": {x: 60, y: 20},
-      "ST": {x: 60, y: 40},
-      "RW": {x: 60, y: 60},
-    };
-
-    positions.forEach((pos, i) => {
-      const playerDiv = document.createElement("div");
-      playerDiv.classList.add("player", teamClass);
-      playerDiv.textContent = names[i].trim().substring(0,2).toUpperCase();
-
-      // Pozice podle % plochy
-      let coords = posCoords[pos];
-      if(!coords) coords = {x: 50, y: 50}; // výchozí střed
-
-      // Pokud je tým na pravé straně, otočíme X souřadnici
-      const xPercent = leftSide ? coords.x : 100 - coords.x;
-      playerDiv.style.left = `calc(${xPercent}% - 15px)`; // - polovina šířky
-      playerDiv.style.top = `calc(${coords.y}% - 15px)`;  // - polovina výšky
-
-      // Tooltip s pozicí a jménem
-      playerDiv.title = `${pos} - ${names[i].trim()}`;
-      pitch.appendChild(playerDiv);
-    });
-
-    return true;
+    // Tým 2
+    let formation2 = document.getElementById('formation2').value;
+    let names2 = document.getElementById('players2').value.split(',').map(s => s.trim()).filter(s => s);
+    let pos2 = formations[formation2];
+    playersTeam2 = [];
+    for (let i=0; i<pos2.length; i++) {
+      let name = names2[i] || pos2[i].pos;
+      playersTeam2.push({name: name, pos: pos2[i].pos, x: pitchWidth - (pos2[i].x / 100 * pitchWidth), y: pos2[i].y});
+      playerElements.push(createPlayerElement(name, 'team2', pitchWidth - (pos2[i].x / 100 * pitchWidth), pos2[i].y));
+    }
   }
 
-  function logMessage(msg) {
-    log.textContent = msg + "\n" + log.textContent;
+  // Náhodný pohyb hráčů v rámci malého okolí
+  function movePlayers() {
+    for (let i=0; i<playerElements.length; i++) {
+      let p = playerElements[i];
+      // Pohyb +- 5px horizontálně a vertikálně s omezením hranic hřiště
+      let dx = (Math.random() - 0.5) * 10;
+      let dy = (Math.random() - 0.5) * 10;
+      let newX = Math.min(Math.max(0, p.x + dx), pitchWidth - 30);
+      let newY = Math.min(Math.max(0, p.y + dy), pitchHeight - 30);
+      p.x = newX;
+      p.y = newY;
+      p.el.style.left = newX + 'px';
+      p.el.style.top = newY + 'px';
+    }
   }
 
-  function updateScoreboard() {
-    scoreboard.textContent = `${score1} : ${score2} | Minuta: ${minute}'`;
-  }
-
-  function simulateMinute() {
+  // Simulace akce na hřišti - náhodná střela na branku
+  function simulateAction() {
     minute++;
-    // Náhodná šance na gól (10% šance, kdo dá? náhodně)
-    if(Math.random() < 0.1) {
-      if(Math.random() < 0.5) {
+    scoreboard.textContent = `${score1} : ${score2} | Minuta: ${minute}'`;
+
+    movePlayers();
+
+    // Náhodné skórování s pravděpodobností
+    let scoreChance = Math.random();
+    if (scoreChance < 0.15) { // 15% šance na gól každou akci
+      // Kdo skóruje?
+      let scoringTeam = Math.random() < 0.5 ? 1 : 2;
+      if (scoringTeam === 1) {
         score1++;
-        logMessage(`Minuta ${minute}: Gól pro Tým 1!`);
+        // Vyber náhodného střelce z týmu 1
+        let scorer = playersTeam1[Math.floor(Math.random() * playersTeam1.length)].name;
+        logEvent(`Gól! Tým 1 skóruje: ${scorer}`);
       } else {
         score2++;
-        logMessage(`Minuta ${minute}: Gól pro Tým 2!`);
+        let scorer = playersTeam2[Math.floor(Math.random() * playersTeam2.length)].name;
+        logEvent(`Gól! Tým 2 skóruje: ${scorer}`);
       }
-    } else {
-      logMessage(`Minuta ${minute}: Hra pokračuje...`);
-    }
-    updateScoreboard();
-
-    if(minute >= 90) {
-      clearInterval(intervalId);
-      logMessage("Konec zápasu!");
-      startBtn.disabled = false;
+      scoreboard.textContent = `${score1} : ${score2} | Minuta: ${minute}'`;
     }
   }
 
-  startBtn.onclick = () => {
-    if(intervalId) return; // už běží
+  function logEvent(text) {
+    let time = `Minuta ${minute}': `;
+    log.textContent = time + text + "\n" + log.textContent;
+  }
 
-    const formation1 = document.getElementById('formation1').value;
-    const formation2 = document.getElementById('formation2').value;
-    const players1 = document.getElementById('players1').value.split(',');
-    const players2 = document.getElementById('players2').value.split(',');
-
-    clearPitch();
-
-    const ok1 = drawPlayers(1, formation1, players1, "team1", true);
-    const ok2 = drawPlayers(2, formation2, players2, "team2", false);
-
-    if(!ok1 || !ok2) return;
-
-    // Reset skóre a času
-    minute = 0;
-    score1 = 0;
-    score2 = 0;
-    updateScoreboard();
-    log.textContent = "";
-
-    // Spustit simulaci minut po minutě každých 500 ms
-    intervalId = setInterval(simulateMinute, 500);
+  function startSimulation() {
     startBtn.disabled = true;
-  };
-
-  resetBtn.onclick = () => {
-    clearInterval(intervalId);
-    intervalId = null;
+    resetBtn.disabled = false;
     minute = 0;
     score1 = 0;
     score2 = 0;
-    updateScoreboard();
-    log.textContent = "";
-    clearPitch();
-    startBtn.disabled = false;
-  };
+    log.textContent = '';
+    setupPlayers();
 
+    intervalId = setInterval(() => {
+      if (minute >= 90) {
+        clearInterval(intervalId);
+        logEvent("Konec zápasu!");
+        startBtn.disabled = false;
+        resetBtn.disabled = true;
+      } else {
+        simulateAction();
+      }
+    }, simulationSpeed);
+  }
+
+  function resetSimulation() {
+    clearInterval(intervalId);
+    startBtn.disabled = false;
+    resetBtn.disabled = true;
+    minute = 0;
+    score1 = 0;
+    score2 = 0;
+    scoreboard.textContent = `${score1} : ${score2} | Minuta: ${minute}'`;
+    log.textContent = '';
+    clearPitch();
+  }
+
+  startBtn.addEventListener('click', startSimulation);
+  resetBtn.addEventListener('click', resetSimulation);
 </script>
 
 </body>
