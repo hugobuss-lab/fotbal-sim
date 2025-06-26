@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fotbalový simulátor</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    background: #3a7a2a; /* zelené hřiště */
+    margin: 0;
+    padding: 0;
+  }
+  #pitch {
+    position: relative;
+    margin: 20px auto;
+    background: #4caf50;
+    width: 800px;
+    height: 500px;
+    border: 3px solid white;
+    border-radius: 15px;
+  }
+  .player {
+    position: absolute;
+    width: 30px;
+    height: 30px;
+    background: yellow;
+    border-radius: 50%;
+    line-height: 30px;
+    font-weight: bold;
+    color: black;
+    cursor: default;
+    user-select: none;
+  }
+  .team1 {
+    background: #ffd700;
+  }
+  .team2 {
+    background: #1e90ff;
+  }
+  #scoreboard {
+    font-size: 24px;
+    color: white;
+    margin-top: 10px;
+  }
+  #controls {
+    margin-top: 15px;
+  }
+  select, input {
+    font-size: 16px;
+    margin: 5px;
+    padding: 5px;
+  }
+  button {
+    font-size: 18px;
+    padding: 8px 20px;
+    margin-top: 10px;
+    cursor: pointer;
+  }
+  #log {
+    margin-top: 20px;
+    width: 800px;
+    height: 100px;
+    background: #222;
+    color: #0f0;
+    font-family: monospace;
+    overflow-y: auto;
+    padding: 10px;
+    border-radius: 8px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+</style>
+</head>
+<body>
+
+<h1>Fotbalový simulátor</h1>
+
+<div>
+  <label for="formation1">Formace Tým 1:</label>
+  <select id="formation1">
+    <option value="4-4-2">4-4-2</option>
+    <option value="4-3-3">4-3-3</option>
+    <option value="3-5-2">3-5-2</option>
+  </select>
+  <label for="players1">Jména Tým 1 (oddělená čárkou):</label>
+  <input type="text" id="players1" size="50" placeholder="Např. Jan, Petr, Karel,...">
+</div>
+
+<div>
+  <label for="formation2">Formace Tým 2:</label>
+  <select id="formation2">
+    <option value="4-4-2">4-4-2</option>
+    <option value="4-3-3">4-3-3</option>
+    <option value="3-5-2">3-5-2</option>
+  </select>
+  <label for="players2">Jména Tým 2 (oddělená čárkou):</label>
+  <input type="text" id="players2" size="50" placeholder="Např. Pavel, Tomáš, Michal,...">
+</div>
+
+<div id="scoreboard">0 : 0 | Minuta: 0'</div>
+
+<div id="pitch"></div>
+
+<div id="controls">
+  <button id="startBtn">Start simulace</button>
+  <button id="resetBtn">Reset</button>
+</div>
+
+<div id="log"></div>
+
+<script>
+  const pitch = document.getElementById('pitch');
+  const scoreboard = document.getElementById('scoreboard');
+  const log = document.getElementById('log');
+  const startBtn = document.getElementById('startBtn');
+  const resetBtn = document.getElementById('resetBtn');
+
+  let minute = 0;
+  let score1 = 0;
+  let score2 = 0;
+  let intervalId = null;
+
+  // Rozdělení pozic podle formace (zjednodušené)
+  const positionsMap = {
+    "4-4-2": ["GK","LB","CB","CB","RB","LM","CM","CM","RM","ST","ST"],
+    "4-3-3": ["GK","LB","CB","CB","RB","CM","CM","CM","LW","ST","RW"],
+    "3-5-2": ["GK","CB","CB","CB","LM","CM","CM","CM","RM","ST","ST"]
+  };
+
+  function clearPitch() {
+    pitch.innerHTML = "";
+  }
+
+  // Nakreslí hráče na hřiště podle formace a jmen
+  function drawPlayers(team, formation, names, teamClass, leftSide) {
+    const positions = positionsMap[formation];
+    if(names.length < positions.length) {
+      alert(`Tým ${team} má málo hráčů pro zvolenou formaci (${positions.length} hráčů potřebuje).`);
+      return false;
+    }
+
+    // Souřadnice hráčů na hřišti - jednodušší rozložení (v %)
+    const posCoords = {
+      "GK": {x: 5, y: 50},
+      "LB": {x: 20, y: 20},
+      "CB": {x: 20, y: 40},
+      "RB": {x: 20, y: 60},
+      "LM": {x: 40, y: 20},
+      "CM": {x: 40, y: 40},
+      "RM": {x: 40, y: 60},
+      "LW": {x: 60, y: 20},
+      "ST": {x: 60, y: 40},
+      "RW": {x: 60, y: 60},
+    };
+
+    positions.forEach((pos, i) => {
+      const playerDiv = document.createElement("div");
+      playerDiv.classList.add("player", teamClass);
+      playerDiv.textContent = names[i].trim().substring(0,2).toUpperCase();
+
+      // Pozice podle % plochy
+      let coords = posCoords[pos];
+      if(!coords) coords = {x: 50, y: 50}; // výchozí střed
+
+      // Pokud je tým na pravé straně, otočíme X souřadnici
+      const xPercent = leftSide ? coords.x : 100 - coords.x;
+      playerDiv.style.left = `calc(${xPercent}% - 15px)`; // - polovina šířky
+      playerDiv.style.top = `calc(${coords.y}% - 15px)`;  // - polovina výšky
+
+      // Tooltip s pozicí a jménem
+      playerDiv.title = `${pos} - ${names[i].trim()}`;
+      pitch.appendChild(playerDiv);
+    });
+
+    return true;
+  }
+
+  function logMessage(msg) {
+    log.textContent = msg + "\n" + log.textContent;
+  }
+
+  function updateScoreboard() {
+    scoreboard.textContent = `${score1} : ${score2} | Minuta: ${minute}'`;
+  }
+
+  function simulateMinute() {
+    minute++;
+    // Náhodná šance na gól (10% šance, kdo dá? náhodně)
+    if(Math.random() < 0.1) {
+      if(Math.random() < 0.5) {
+        score1++;
+        logMessage(`Minuta ${minute}: Gól pro Tým 1!`);
+      } else {
+        score2++;
+        logMessage(`Minuta ${minute}: Gól pro Tým 2!`);
+      }
+    } else {
+      logMessage(`Minuta ${minute}: Hra pokračuje...`);
+    }
+    updateScoreboard();
+
+    if(minute >= 90) {
+      clearInterval(intervalId);
+      logMessage("Konec zápasu!");
+      startBtn.disabled = false;
+    }
+  }
+
+  startBtn.onclick = () => {
+    if(intervalId) return; // už běží
+
+    const formation1 = document.getElementById('formation1').value;
+    const formation2 = document.getElementById('formation2').value;
+    const players1 = document.getElementById('players1').value.split(',');
+    const players2 = document.getElementById('players2').value.split(',');
+
+    clearPitch();
+
+    const ok1 = drawPlayers(1, formation1, players1, "team1", true);
+    const ok2 = drawPlayers(2, formation2, players2, "team2", false);
+
+    if(!ok1 || !ok2) return;
+
+    // Reset skóre a času
+    minute = 0;
+    score1 = 0;
+    score2 = 0;
+    updateScoreboard();
+    log.textContent = "";
+
+    // Spustit simulaci minut po minutě každých 500 ms
+    intervalId = setInterval(simulateMinute, 500);
+    startBtn.disabled = true;
+  };
+
+  resetBtn.onclick = () => {
+    clearInterval(intervalId);
+    intervalId = null;
+    minute = 0;
+    score1 = 0;
+    score2 = 0;
+    updateScoreboard();
+    log.textContent = "";
+    clearPitch();
+    startBtn.disabled = false;
+  };
+
+</script>
+
+</body>
+</html>
